@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Attendance & Trends Tracker</title>
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <style>
+    :root {
+      --bg-main: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc;
+      --text-muted: #94a3b8; --border-color: #334155; --accent-blue: #3b82f6;
+      --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --purple: #6366f1;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+    body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; }
+    .header { background: var(--card-bg); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    .logo { font-size: 20px; font-weight: 700; color: var(--accent-blue); display: flex; align-items: center; gap: 10px; }
+    .user-area { display: flex; align-items: center; gap: 12px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card-bg); border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+    .card h3 { font-size: 16px; margin-bottom: 16px; color: var(--text-main); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+    .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .control-group label { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 4px; }
+    select, input { width: 100%; padding: 8px 10px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px; outline: none; font-size: 13px; }
+    select:focus, input:focus { border-color: var(--accent-blue); }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .btn { padding: 6px 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
+    .btn-whatsapp { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; }
+    .btn-download { background: #64748b; color: white; }
+    .btn-share { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .chart-container { position: relative; height: 280px; width: 100%; margin-bottom: 16px; }
+    .trend-badge { display: inline-block; background: rgba(16, 185, 129, 0.15); color: var(--success); padding: 3px 10px; border-radius: 16px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+    .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-main); z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+    .auth-box { background: var(--card-bg); padding: 32px; border-radius: 20px; border: 1px solid var(--border-color); max-width: 380px; width: 90%; }
+    .auth-box h2 { margin-bottom: 16px; color: var(--accent-blue); font-size: 20px; }
+    .auth-input { margin-bottom: 12px; }
+    #share-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--success); color: white; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+    @media (max-width: 768px) {
+      .header { flex-direction: column; gap: 10px; text-align: center; }
+      .controls-grid { grid-template-columns: 1fr; }
+      .btn-group { justify-content: center; }
+      .container { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-box">
+      <h2><i class="fas fa-user-shield"></i> Secure Access</h2>
+      <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 14px;">Please login to access Attendance Reports.</p>
+      <input type="email" id="login-email" class="auth-input" style="width: 100%; padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;" placeholder="Email Address">
+      <input type="password" id="login-password" class="auth-input" style="width: 100%; padding: 10px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 8px;" placeholder="Password">
+      <button class="btn btn-primary" style="width: 100%; justify-content: center; padding: 10px;" onclick="login()">Login</button>
+      <p id="auth-error" style="color: var(--danger); margin-top: 12px; font-size: 13px; display: none;"></p>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="logo"><i class="fas fa-chart-line"></i> Attendance & Trends</div>
+    <div class="user-area">
+      <span id="user-email" style="color: var(--text-muted); font-size: 14px;"></span>
+      <button class="btn" style="background: #64748b; color: white;" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="card">
+      <h3>Filter & Generate</h3>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Lesson</label>
+          <select id="lesson-select">
+            <option value="">All Lessons</option>
+            <option value="Introduction">Introduction</option>
+            <option value="Salvation">Salvation</option>
+            <option value="Forgiveness">Forgiveness</option>
+            <option value="Temptation">Temptation</option>
+            <option value="Prayers">Prayers</option>
+            <option value="Bible">Bible</option>
+            <option value="Fellowship">Fellowship</option>
+            <option value="Witnessing">Witnessing</option>
+            <option value="Baptism">Baptism</option>
+            <option value="HolySpirit1">Holy Spirit Pt.1</option>
+            <option value="HolySpirit2">Holy Spirit Pt.2</option>
+            <option value="Giving">Giving</option>
+            <option value="Deliverance1">Deliverance Pt.1</option>
+            <option value="Deliverance2">Deliverance Pt.2</option>
+            <option value="Evangelism">Evangelism</option>
+            <option value="Kesha">Kesha</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Status</label>
+          <select id="status-select">
+            <option value="all">All Status</option>
+            <option value="completed">Completed</option>
+            <option value="pending">Pending</option>
+            <option value="risk">At Risk (>14 days)</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Class</label>
+          <select id="class-select"><option value="">All Classes</option></select>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="generateReport()"><i class="fas fa-sync-alt"></i> Refresh</button>
+        <button class="btn btn-whatsapp" id="btn-whatsapp" onclick="bulkWhatsApp()" disabled><i class="fab fa-whatsapp"></i> Bulk Msg</button>
+        <button class="btn btn-download" id="btn-pdf" onclick="exportPDF()" disabled><i class="fas fa-file-pdf"></i> PDF</button>
+        <button class="btn btn-download" id="btn-csv" onclick="exportCSV()" disabled><i class="fas fa-file-csv"></i> CSV</button>
+        <button class="btn btn-share" onclick="shareSystem()"><i class="fas fa-share-alt"></i> Share Link</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Progress Trends <span class="trend-badge" id="trend-stat">Loading...</span></h3>
+      <div class="chart-container"><canvas id="trendChart"></canvas></div>
+    </div>
+        <div class="card results-area">
+      <div class="results-header">
+        <h3 style="border: none; padding: 0; margin: 0;">Results</h3>
+        <span class="results-count" id="results-count">0 Records</span>
+      </div>
+      <div class="student-list" id="student-list">
+        <div style="padding: 40px; text-align: center; color: var(--text-muted);">Select filters and click Refresh</div>
+      </div>
+    </div>
+
+    <!-- ATTENDANCE MARKING SECTION -->
+    <div class="card" id="attendance-section">
+      <h3><i class="fas fa-clipboard-check"></i> Mark Session Attendance</h3>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Date</label>
+          <input type="date" id="attendance-date" />
+        </div>
+        <div class="control-group">
+          <label>Class Filter</label>
+          <select id="attendance-class-filter"><option value="">All Classes</option></select>
+        </div>
+        <div class="control-group">
+          <label>Session Type</label>
+          <select id="session-type">
+            <option value="physical">Physical</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+      </div>
+      <div class="student-list" id="attendance-student-list" style="max-height: 300px;">
+        <div style="padding: 20px; text-align: center; color: var(--text-muted);">Select a date to mark attendance</div>
+      </div>
+      <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+        <button class="btn btn-primary" onclick="saveAttendance()"><i class="fas fa-save"></i> Save Attendance</button>
+        <button class="btn" style="background: #64748b; color: white;" onclick="viewAttendanceHistory()"><i class="fas fa-history"></i> History</button>
+      </div>
+    </div>
+
+    <!-- ✅ NEW: ATTENDANCE REPORT BY DATE -->
+    <div class="card" id="attendance-report-section">
+      <h3><i class="fas fa-calendar-check"></i> Attendance Report by Date</h3>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Select Date</label>
+          <input type="date" id="report-date" />
+        </div>
+        <div class="control-group">
+          <label>Class Filter</label>
+          <select id="report-class-filter"><option value="">All Classes</option></select>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="generateAttendanceReport()"><i class="fas fa-search"></i> Generate Report</button>
+        <button class="btn btn-download" id="btn-attendance-pdf" onclick="exportAttendancePDF()" disabled><i class="fas fa-file-pdf"></i> Export PDF</button>
+      </div>
+      <div id="attendance-report-results" style="margin-top: 16px;"></div>
+    </div>
+  </main>
+
+<style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-main); }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    .history-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+    .history-content { background: var(--card-bg); padding: 24px; border-radius: 16px; width: 90%; max-width: 480px; max-height: 80vh; overflow-y: auto; border: 1px solid var(--border-color); }
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .close-modal { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
+    .history-item { background: var(--bg-main); padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border-color); }
+    .results-area { margin-top: 16px; }
+    .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .results-count { font-size: 13px; color: var(--text-muted); }
+    .student-list { max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 12px; }
+    .student-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border-color); transition: background 0.2s; }
+    .student-item:hover { background: rgba(51, 65, 85, 0.5); }
+    .student-item:last-child { border-bottom: none; }
+    .student-info h4 { font-size: 14px; color: var(--text-main); font-weight: 600; }
+    .student-info p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .status-badge { font-size: 11px; padding: 4px 10px; border-radius: 16px; font-weight: 600; white-space: nowrap; }
+    .status-completed { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .status-pending { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+    .attendance-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border-color); transition: background 0.2s; }
+    .attendance-row:hover { background: rgba(51, 65, 85, 0.5); }
+    .attendance-toggle { display: flex; gap: 6px; }
+    .toggle-btn { padding: 5px 10px; border: 1px solid var(--border-color); background: var(--bg-main); color: var(--text-muted); border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.2s; }
+    .toggle-btn.active-present { background: var(--success); color: white; border-color: var(--success); }
+    .toggle-btn.active-absent { background: var(--danger); color: white; border-color: var(--danger); }
+    /* Report Table Styling */
+    #attendance-report-results table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    #attendance-report-results th { background: var(--border-color); text-align: left; padding: 10px; font-size: 12px; color: var(--text-muted); }
+    #attendance-report-results td { padding: 10px; border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-main); }
+    #attendance-report-results tr:hover td { background: rgba(51, 65, 85, 0.5); }
+</style>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyCdSvUk6qpC857ZJfaDbniDlOKvWXPYYXY",
+    authDomain: "discipleship-dashboard-4d713.firebaseapp.com",
+    databaseURL: "https://discipleship-dashboard-4d713-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "discipleship-dashboard-4d713",
+    storageBucket: "discipleship-dashboard-4d713.firebasestorage.app",
+    messagingSenderId: "27738663604",
+    appId: "1:27738663604:web:bf1898247e0dd5a37805e1"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const database = firebase.database();
+  const auth = firebase.auth();
+
+  let appData = { students: {}, progress: {}, currentUser: null, filteredStudents: [] };
+  let trendChartInstance = null;
+  let attendanceTempData = {};
+  let attendanceReportData = [];
+
+  const ALL_LESSONS = [
+    "Introduction","Salvation","Forgiveness","Temptation","Prayers","Bible",
+    "Fellowship","Witnessing","Baptism","HolySpirit1","HolySpirit2","Giving",
+    "Deliverance1","Deliverance2","Evangelism","Kesha"
+  ];
+
+  // ✅ FIXED: Validate Access with "First Run" Allowance
+  function validateAccess(user) {
+    if (!user) return;
+    database.ref('authorized_users/' + user.uid).once('value').then(snapshot => {
+      if (snapshot.exists()) {
+        grantAccess(user);
+      } else {
+        // Check if authorized_users list is completely empty (allows setup)
+        database.ref('authorized_users').once('value').then(listSnapshot => {
+          const list = listSnapshot.val();
+          if (!list || Object.keys(list).length === 0) {
+            console.log("No authorized users found. Allowing access for setup.");
+            grantAccess(user);
+          } else {
+            alert('Your access has been revoked or you are not authorized.');
+            auth.signOut();
+          }
+        });
+      }
+    }).catch(err => {
+      console.error(err);
+      // Fallback: On error, allow access to prevent being stuck
+      grantAccess(user); 
+    });
+  }
+
+  function grantAccess(user) {
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('user-email').textContent = user.email;
+    appData.currentUser = user;
+    initApp();
+  }
+
+  auth.onAuthStateChanged(user => {
+    if (user) validateAccess(user);
+    else {
+      document.getElementById('auth-overlay').style.display = 'flex';
+      appData.currentUser = null;
+    }
+  });
+
+  window.login = function() {
+    const email = document.getElementById('login-email').value;
+    const pass = document.getElementById('login-password').value;
+    const err = document.getElementById('auth-error');
+    if(!email || !pass) { err.textContent = "Please fill all fields"; err.style.display = "block"; return; }
+    auth.signInWithEmailAndPassword(email, pass)
+      .then(() => err.style.display = "none")
+      .catch(e => { err.textContent = "Login Failed: " + e.message; err.style.display = "block"; });
+  };
+
+  window.logout = function() { auth.signOut(); };
+
+  function initApp() {
+    database.ref('students').once('value', snap => {
+      appData.students = snap.val() || {};
+      populateClassFilters();
+      generateTrendChart();
+    });
+    database.ref('progress').once('value', snap => {
+      appData.progress = snap.val() || {};
+      generateTrendChart();
+      generateReport();
+    });
+  }
+
+  function populateClassFilters() {
+    const classes = [...new Set(Object.values(appData.students).map(s => s.class).filter(c => c))].sort();
+    const html = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}">Class ${c}</option>`).join('');
+    document.getElementById('class-select').innerHTML = html;
+    document.getElementById('attendance-class-filter').innerHTML = html;
+    document.getElementById('report-class-filter').innerHTML = html;
+  }
+
+  function isLessonCompleted(lp) {
+    return lp === true || (lp && typeof lp === 'object' && lp.completed === true);
+  }
+
+  function generateTrendChart() {
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const dataPoints = ALL_LESSONS.map(l => {
+      let count = 0;
+      Object.keys(appData.progress).forEach(id => { if (isLessonCompleted(appData.progress[id][l])) count++; });
+      return count;
+    });
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.6)');
+    gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+    if(trendChartInstance) trendChartInstance.destroy();
+    trendChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ALL_LESSONS.map(l => l.length > 6 ? l.substring(0,6)+'..' : l),
+        datasets: [{
+          label: 'Completed', data: dataPoints, borderColor: '#3b82f6', backgroundColor: gradient,
+          borderWidth: 2, pointBackgroundColor: '#60a5fa', pointRadius: 4, fill: true, tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: {display:false}, tooltip: { backgroundColor:'#1e293b', titleColor:'#fff', bodyColor:'#94a3b8' } },
+        scales: { y: { grid:{color:'#334155'}, ticks:{color:'#94a3b8'} }, x: { grid:{display:false}, ticks:{color:'#94a3b8'} } }
+      }
+    });
+    const total = dataPoints.reduce((a,b)=>a+b,0);
+    document.getElementById('trend-stat').textContent = `Total: ${total} | Avg: ${Math.round(total/16)}/lesson`;
+  }
+
+  window.generateReport = function() {
+    const lesson = document.getElementById('lesson-select').value;
+    const status = document.getElementById('status-select').value;
+    const cls = document.getElementById('class-select').value;
+    const results = [];
+    const now = Date.now();
+    Object.keys(appData.students).forEach(id => {
+      const s = appData.students[id];
+      const p = appData.progress[id] || {};
+      if(cls && s.class !== cls) return;
+      if(lesson) {
+        const done = isLessonCompleted(p[lesson]);
+        if(status==='completed' && !done) return;
+        if(status==='pending' && done) return;
+        if(status==='risk') {
+          const days = Math.floor((now - (s.updatedAt||0))/(1000*60*60*24));
+          if(days <= 14) return;
+        }
+        results.push({ id, name:s.name, phone:s.phone, class:s.class, cohort:s.cohort||'-', lesson, status: done?'Completed':'Pending', updatedAt:s.updatedAt });
+      } else {
+        const cc = ALL_LESSONS.filter(l => isLessonCompleted(p[l])).length;
+        results.push({ id, name:s.name, phone:s.phone, class:s.class, cohort:s.cohort||'-', lesson:'Overall', status:`${cc}/16 (${Math.round(cc/16*100)}%)`, updatedAt:s.updatedAt });
+      }
+    });
+    appData.filteredStudents = results;
+    renderList();
+  };
+
+  function renderList() {
+    const list = document.getElementById('student-list');
+    const count = document.getElementById('results-count');
+    const data = appData.filteredStudents;
+    count.textContent = `${data.length} Records`;
+    if(!data.length) {
+      list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No matches.</div>';
+      enableButtons(false); return;
+    }
+    enableButtons(true);
+    list.innerHTML = data.map(s => `
+      <div class="student-item">
+        <div class="student-info">
+          <h4>${s.name}</h4>
+          <p><i class="fas fa-phone"></i> ${s.phone} | Class ${s.class}</p>
+        </div>
+        <span class="status-badge ${s.status.includes('Completed')?'status-completed':'status-pending'}">${s.status}</span>
+      </div>`).join('');
+  }
+
+  function enableButtons(state) {
+    document.getElementById('btn-whatsapp').disabled = !state;
+    document.getElementById('btn-pdf').disabled = !state;
+    document.getElementById('btn-csv').disabled = !state;
+  }
+
+  // 🔗 SHARE LINK
+  window.shareSystem = function() {
+    const url = window.location.origin + window.location.pathname;
+    if (navigator.share) {
+      navigator.share({ title: "Discipleship Attendance Tracker", text: "Check out our Discipleship Attendance & Progress Tracker!", url })
+        .then(() => showToast("Shared successfully!"))
+        .catch(err => { if (err.name !== 'AbortError') fallbackCopy(url); });
+    } else { fallbackCopy(url); }
+  };
+
+  function fallbackCopy(url) {
+    const textarea = document.createElement('textarea');
+    textarea.value = url; textarea.style.position = 'fixed'; textarea.style.opacity = '0';
+    document.body.appendChild(textarea); textarea.select();
+    try {
+      document.execCommand('copy');
+      showToast("Link copied to clipboard! Paste it anywhere.");
+    } catch (err) { showToast("Copy failed. Please copy manually: " + url); } 
+    finally { document.body.removeChild(textarea); }
+  }
+
+  function showToast(message) {
+    let toast = document.getElementById('share-toast');
+    if (!toast) { toast = document.createElement('div'); toast.id = 'share-toast'; document.body.appendChild(toast); }
+    toast.textContent = message; toast.style.opacity = '1';
+    setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+  }
+
+  // 💬 BULK WHATSAPP
+  window.bulkWhatsApp = function() {
+    if(!appData.filteredStudents.length) return;
+    const msg = encodeURIComponent("Hello! Update on your Discipleship progress. Please check in with us.");
+    alert(`Opening WhatsApp for ${appData.filteredStudents.length} students. Allow pop-ups.`);
+    appData.filteredStudents.forEach((s,i) => {
+      setTimeout(() => {
+        let p = s.phone.replace(/\D/g,'');
+        if(p.startsWith('0')) p='254'+p.substring(1); else if(p.startsWith('+')) p=p.substring(1);
+        window.open(`https://wa.me/${p}?text=${msg}`, '_blank');
+      }, i*800);
+    });
+  };
+
+  // 📥 EXPORT PDF (LESSON STATUS)
+  window.exportPDF = function() {
+    if (!appData.filteredStudents.length) { alert('No records to export'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const lesson = document.getElementById('lesson-select').value || 'All Lessons';
+    const status = document.getElementById('status-select').value;
+    const statusText = status === 'completed' ? 'Completed' : status === 'pending' ? 'Pending' : status === 'risk' ? 'At Risk' : 'All Status';
+
+    doc.setFillColor(15, 23, 42); doc.rect(0, 0, doc.internal.pageSize.getWidth(), 28, 'F');
+    doc.setFontSize(20); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+    doc.text('Discipleship Attendance Report', 14, 14);
+    doc.setFontSize(11); doc.setFont('helvetica','normal');
+    doc.text(`Filter: ${lesson} | Status: ${statusText}`, 14, 21);
+
+    doc.setTextColor(50,50,50); doc.setFontSize(10);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, 35, { align: 'right' });
+    doc.text(`Total Records: ${appData.filteredStudents.length}`, 14, 35);
+
+    const tableData = appData.filteredStudents.map((s, index) => [
+      (index + 1).toString(), s.name, s.phone, `Class ${s.class}`, s.status
+    ]);
+
+    doc.autoTable({
+      startY: 40, head: [['#', 'Student Name', 'Phone Number', 'Class', 'Status']], body: tableData,
+      theme: 'grid', styles: { fontSize: 9, cellPadding: 3, font: 'helvetica', halign: 'left', valign: 'middle' },
+      headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10, halign: 'center' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 45 }, 2: { cellWidth: 30 }, 3: { cellWidth: 25, halign: 'center' }, 4: { cellWidth: 25, halign: 'center' } },
+      didParseCell: function(data) {
+        if (data.section === 'body' && data.column.index === 4) {
+          const val = data.cell.raw;
+          if (val.includes('Completed')) { data.cell.styles.fillColor = [212, 251, 225]; data.cell.styles.textColor = [6, 95, 70]; }
+          else if (val.includes('Pending') || val.includes('Risk')) { data.cell.styles.fillColor = [254, 226, 226]; data.cell.styles.textColor = [159, 18, 57]; }
+        }
+      },
+      margin: { top: 40, left: 14, right: 14, bottom: 20 }, pageBreak: 'auto', showHead: 'everyPage'
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i); doc.setFontSize(8); doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${i} of ${pageCount} | 2026 Discipleship Tracker`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+    doc.save(`Attendance_${lesson}_${statusText}_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  window.exportCSV = function() {
+    let csv = "No,Name,Phone,Class,Status\n";
+    appData.filteredStudents.forEach((s, i) => csv += `${i+1},"${s.name}","${s.phone}","${s.class}","${s.status}"\n`);
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Report.csv'; a.click();
+  };
+
+  // 📅 ATTENDANCE MARKING SYSTEM (FIXED ASYNC + SESSION TYPE)
+  window.loadAttendanceStudents = function() {
+    const date = document.getElementById('attendance-date').value;
+    const cls = document.getElementById('attendance-class-filter').value;
+    if(!date) {
+      document.getElementById('attendance-student-list').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Select a date to mark attendance</div>';
+      attendanceTempData = {}; return;
+    }
+    const listEl = document.getElementById('attendance-student-list');
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</div>';
+
+    database.ref('attendance/' + date).once('value').then(snap => {
+      const savedData = snap.val() || {};
+      attendanceTempData = {};
+      Object.keys(savedData).forEach(key => { if(key !== 'summary' && key !== 'sessionType') attendanceTempData[key] = savedData[key]; });
+      const sessionSelect = document.getElementById('session-type');
+      if(savedData.sessionType) sessionSelect.value = savedData.sessionType;
+
+      const students = Object.entries(appData.students).filter(([id,s]) => !cls || s.class === cls);
+      if(!students.length) { listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">No students found.</div>'; return; }
+      listEl.innerHTML = students.map(([id,s]) => {
+        const st = attendanceTempData[id]?.status || 'unmarked';
+        return `<div class="attendance-row">
+          <div><strong>${s.name}</strong> <span style="color:var(--text-muted);font-size:12px;"> | Class ${s.class}</span></div>
+          <div class="attendance-toggle">
+            <button class="toggle-btn ${st==='present'?'active-present':''}" onclick="markAttendance('${id}','present',this)">Present</button>
+            <button class="toggle-btn ${st==='absent'?'active-absent':''}" onclick="markAttendance('${id}','absent',this)">Absent</button>
+          </div>
+        </div>`;
+      }).join('');
+    }).catch(err => { listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger);">Error loading data.</div>'; });
+  };
+
+  window.markAttendance = function(id, status, btn) {
+    attendanceTempData[id] = { status, markedAt: Date.now() };
+    const row = btn.closest('.attendance-row');
+    row.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active-present','active-absent'));
+    btn.classList.add(status==='present'?'active-present':'active-absent');
+  };
+
+  window.saveAttendance = function() {
+    const date = document.getElementById('attendance-date').value;
+    const sessionType = document.getElementById('session-type').value;
+    if(!date) { alert('Select a date'); return; }
+    const markedEntries = Object.values(attendanceTempData).filter(a => a.status === 'present' || a.status === 'absent');
+    if(markedEntries.length === 0) { alert('Please mark at least one student as Present or Absent before saving.'); return; }
+    const present = markedEntries.filter(a => a.status === 'present').length;
+    const absent = markedEntries.filter(a => a.status === 'absent').length;
+    database.ref('attendance/' + date).set({
+      ...attendanceTempData, sessionType: sessionType,
+      summary: { total: present + absent, present, absent, savedAt: Date.now() }
+    }).then(() => {
+      alert(`✅ Saved for ${date}\nSession: ${sessionType.toUpperCase()}\nPresent: ${present} | Absent: ${absent}`);
+      loadAttendanceStudents();
+    }).catch(e => alert('Error: ' + e.message));
+  };
+
+  window.viewAttendanceHistory = function() {
+    database.ref('attendance').orderByKey().limitToLast(15).once('value').then(snap => {
+      const recs = snap.val();
+      if(!recs) { alert('No records yet.'); return; }
+      let html = Object.keys(recs).sort().reverse().map(date => {
+        const s = recs[date]; const sessionType = s.sessionType || 'Not set'; const summary = s.summary || {};
+        return `<div class="history-item">
+          <strong>${date}</strong> <span style="color:var(--accent-blue);font-size:12px;">| ${sessionType.toUpperCase()}</span><br>
+          <span style="font-size:12px;color:var(--text-muted);">Present: ${summary.present || 0} | Absent: ${summary.absent || 0} | Total: ${summary.total || 0}</span><br>
+          <button class="btn" style="margin-top:8px;padding:4px 10px;font-size:11px;background:#64748b;color:white;" onclick="loadAttendanceForDate('${date}')">Load</button>
+        </div>`;
+      }).join('');
+      const modal = document.createElement('div'); modal.className = 'history-modal';
+      modal.innerHTML = `<div class="history-content">
+        <div class="history-header"><h3 style="border:none;padding:0;margin:0;font-size:16px;">Attendance History</h3>
+        <button class="close-modal" onclick="this.closest('.history-modal').remove()">&times;</button></div>${html}</div>`;
+      document.body.appendChild(modal);
+    });
+  };
+
+  window.loadAttendanceForDate = function(date) {
+    document.getElementById('attendance-date').value = date;
+    document.querySelectorAll('.history-modal').forEach(m => m.remove());
+    loadAttendanceStudents();
+  };
+
+  // ✅ NEW: ATTENDANCE REPORT BY DATE & PDF EXPORT
+  window.generateAttendanceReport = function() {
+    const date = document.getElementById('report-date').value;
+    const cls = document.getElementById('report-class-filter').value;
+    const resultsDiv = document.getElementById('attendance-report-results');
+    const pdfBtn = document.getElementById('btn-attendance-pdf');
+
+    if(!date) { alert('Please select a date'); return; }
+    resultsDiv.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Loading attendance records...</div>';
+
+    database.ref('attendance/' + date).once('value').then(snap => {
+      const data = snap.val() || {};
+      const students = Object.entries(appData.students).filter(([id,s]) => !cls || s.class === cls);
+
+      if(!students.length) {
+        resultsDiv.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">No students found.</div>';
+        pdfBtn.disabled = true; return;
+      }
+
+      attendanceReportData = students.map(([id,s]) => ({
+        name: s.name, phone: s.phone, class: s.class, status: data[id]?.status || 'Not Marked'
+      }));
+
+      let html = '<table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Status</th></tr></thead><tbody>';
+      attendanceReportData.forEach((s, i) => {
+        const statusColor = s.status === 'present' ? 'var(--success)' : s.status === 'absent' ? 'var(--danger)' : 'var(--text-muted)';
+        const statusBg = s.status === 'present' ? 'rgba(16,185,129,0.15)' : s.status === 'absent' ? 'rgba(239,68,68,0.15)' : 'rgba(100,116,139,0.15)';
+        html += `<tr><td>${i+1}</td><td>${s.name}</td><td>Class ${s.class}</td>
+        <td><span style="background:${statusBg};color:${statusColor};padding:3px 8px;border-radius:12px;font-weight:600;">${s.status.toUpperCase()}</span></td></tr>`;
+      });
+      html += '</tbody></table>';
+          resultsDiv.innerHTML = html;
+      pdfBtn.disabled = false;
+    });
+  };
+
+  window.exportAttendancePDF = function() {
+    if(!attendanceReportData.length) { alert('Generate a report first'); return; }
+    const date = document.getElementById('report-date').value;
+    const cls = document.getElementById('report-class-filter').value || 'All Classes';
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+
+    doc.setFillColor(15, 23, 42); doc.rect(0, 0, doc.internal.pageSize.getWidth(), 28, 'F');
+    doc.setFontSize(20); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+    doc.text('Daily Attendance Report', 14, 14);
+    doc.setFontSize(11); doc.setFont('helvetica','normal');
+    doc.text(`Date: ${date} | Class: ${cls}`, 14, 21);
+
+    doc.setTextColor(50,50,50); doc.setFontSize(10);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 14, 35, { align: 'right' });
+    doc.text(`Total Records: ${attendanceReportData.length}`, 14, 35);
+
+    const tableData = attendanceReportData.map((s, index) => [
+      (index + 1).toString(), s.name, s.phone, `Class ${s.class}`, s.status.toUpperCase()
+    ]);
+
+    doc.autoTable({
+      startY: 40, head: [['#', 'Student Name', 'Phone Number', 'Class', 'Status']], body: tableData,
+      theme: 'grid', styles: { fontSize: 9, cellPadding: 3, font: 'helvetica', halign: 'left', valign: 'middle' },
+      headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10, halign: 'center' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }, 1: { cellWidth: 45 }, 2: { cellWidth: 30 }, 3: { cellWidth: 25, halign: 'center' }, 4: { cellWidth: 25, halign: 'center' } },
+      didParseCell: function(data) {
+        if (data.section === 'body' && data.column.index === 4) {
+          const val = data.cell.raw;
+          if (val === 'PRESENT') { data.cell.styles.fillColor = [212, 251, 225]; data.cell.styles.textColor = [6, 95, 70]; }
+          else if (val === 'ABSENT') { data.cell.styles.fillColor = [254, 226, 226]; data.cell.styles.textColor = [159, 18, 57]; }
+          else { data.cell.styles.fillColor = [241, 245, 249]; data.cell.styles.textColor = [100, 116, 139]; }
+        }
+      },
+      margin: { top: 40, left: 14, right: 14, bottom: 20 }, pageBreak: 'auto', showHead: 'everyPage'
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i); doc.setFontSize(8); doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${i} of ${pageCount} | 2026 Discipleship Tracker`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+    doc.save(`Attendance_Report_${date.replace(/-/g,'_')}.pdf`);
+  };
+
+  // ✅ Initialize Listeners
+  document.addEventListener('DOMContentLoaded', () => {
+    const d = document.getElementById('attendance-date');
+    if(d) {
+      d.valueAsDate = new Date();
+      d.addEventListener('change', loadAttendanceStudents);
+      if(d.value) loadAttendanceStudents();
+    }
+    const cls = document.getElementById('attendance-class-filter');
+    if(cls) cls.addEventListener('change', loadAttendanceStudents);
+    
+    const reportDate = document.getElementById('report-date');
+    if(reportDate) reportDate.valueAsDate = new Date();
+  });
+</script>
+</body>
+</html>
