@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Certificates - Kingdom Seekers Fellowship</title>
+  
+  <!-- jsPDF for certificate generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  
+  <style>
+    :root {
+      --bg-main: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc;
+      --text-muted: #94a3b8; --border-color: #334155; --accent-blue: #3b82f6;
+      --success: #10b981; --danger: #ef4444; --warning: #f59e0b; --purple: #6366f1;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', Arial, sans-serif; 
+      background: var(--bg-main);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; background: var(--card-bg); border-radius: 20px; overflow: hidden; border: 1px solid var(--border-color); }
+    
+    .header { 
+      background: linear-gradient(135deg, var(--accent-blue), var(--purple)); 
+      color: white; 
+      padding: 30px 20px; 
+      text-align: center; 
+    }
+    .header h1 { font-size: 28px; margin-bottom: 8px; }
+    .header p { opacity: 0.9; font-size: 14px; }
+    
+    .content { padding: 20px; }
+    
+    .stats { 
+      background: linear-gradient(135deg, var(--success), #059669); 
+      color: white; 
+      padding: 20px; 
+      border-radius: 12px; 
+      text-align: center; 
+      margin-bottom: 25px;
+    }
+    .stats h2 { font-size: 42px; margin-bottom: 5px; }
+    .stats p { font-size: 14px; opacity: 0.95; }
+    
+    .filters { 
+      background: var(--bg-main); 
+      padding: 15px; 
+      border-radius: 12px; 
+      margin-bottom: 20px;
+      border: 1px solid var(--border-color);
+    }
+    .search-box { 
+      width: 100%; 
+      padding: 12px 15px; 
+      border: 1px solid var(--border-color); 
+      border-radius: 10px; 
+      font-size: 14px;
+      background: var(--bg-main);
+      color: var(--text-main);
+    }
+    .search-box:focus { outline: none; border-color: var(--accent-blue); }
+    
+    .student-list { margin-top: 10px; }
+    
+    .student-card { 
+      border: 1px solid var(--border-color); 
+      border-radius: 12px; 
+      padding: 20px; 
+      margin: 12px 0; 
+      background: var(--bg-main);
+      transition: all 0.2s ease;
+    }
+    .student-card:hover { border-color: var(--accent-blue); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15); }
+    
+    .student-card h3 { 
+      color: var(--text-main); 
+      margin-bottom: 12px; 
+      font-size: 18px;
+    }
+    .student-card p { 
+      color: var(--text-muted); 
+      margin: 6px 0; 
+      font-size: 13px;
+    }
+    
+    .badge { 
+      display: inline-block; 
+      background: rgba(59, 130, 246, 0.15); 
+      color: var(--accent-blue); 
+      padding: 4px 12px; 
+      border-radius: 12px; 
+      font-size: 11px; 
+      font-weight: 600;
+    }
+    .grad-badge { 
+      background: rgba(16, 185, 129, 0.15); 
+      color: var(--success); 
+      margin-left: 8px;
+    }
+    
+    .btn { 
+      background: linear-gradient(135deg, var(--success), #059669); 
+      color: white; 
+      border: none; 
+      padding: 12px 20px; 
+      border-radius: 10px; 
+      font-weight: 600; 
+      cursor: pointer; 
+      width: 100%; 
+      margin-top: 12px;
+      font-size: 14px;
+      transition: transform 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn-secondary { 
+      background: var(--border-color); 
+      color: var(--text-main);
+    }
+    
+    .loading { text-align: center; padding: 50px 20px; color: var(--text-muted); font-size: 16px; }
+    .error { background: rgba(239, 68, 68, 0.15); color: var(--danger); padding: 20px; border-radius: 12px; margin: 20px 0; font-size: 14px; border: 1px solid var(--danger); }
+    .success { background: rgba(16, 185, 129, 0.15); color: var(--success); padding: 15px; border-radius: 8px; margin: 10px 0; font-size: 14px; border: 1px solid var(--success); }
+    
+    .back-link { 
+      display: block; 
+      text-align: center; 
+      background: var(--accent-blue); 
+      color: white; 
+      padding: 15px; 
+      border-radius: 0 0 20px 20px; 
+      text-decoration: none; 
+      font-weight: 600;
+    }
+    .back-link:hover { background: #2563eb; }
+    
+    /* Signature Modal */
+    .modal { 
+      display: none; 
+      position: fixed; 
+      top: 0; left: 0; 
+      width: 100%; height: 100%; 
+      background: rgba(0,0,0,0.8); 
+      z-index: 2000; 
+      justify-content: center; 
+      align-items: center; 
+    }
+    .modal.active { display: flex; }
+    .modal-content { 
+      background: var(--card-bg); 
+      padding: 24px; 
+      border-radius: 16px; 
+      width: 90%; 
+      max-width: 500px; 
+      border: 1px solid var(--border-color);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      margin-bottom: 16px; 
+      padding-bottom: 12px; 
+      border-bottom: 1px solid var(--border-color);
+    }
+    .modal-title { font-size: 18px; font-weight: 600; color: var(--text-main); }
+    .close-modal { 
+      background: none; 
+      border: none; 
+      color: var(--text-muted); 
+      font-size: 24px; 
+      cursor: pointer; 
+    }
+    
+    .signature-pad { 
+      border: 2px dashed var(--border-color); 
+      border-radius: 8px; 
+      background: white; 
+      margin: 16px 0; 
+      touch-action: none;
+      cursor: crosshair;
+    }
+    .signature-controls { 
+      display: flex; 
+      gap: 8px; 
+      margin-top: 12px; 
+      flex-wrap: wrap;
+    }
+    .signature-preview { 
+      margin-top: 16px; 
+      text-align: center; 
+    }
+    .signature-preview img { 
+      max-width: 100%; 
+      border: 1px solid var(--border-color); 
+      border-radius: 8px; 
+      background: white;
+    }
+    
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      margin: 8px 0;
+    }
+    .file-input-wrapper input[type=file] {
+      position: absolute;
+      left: 0; top: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    
+    @media (max-width: 768px) {
+      .header h1 { font-size: 24px; }
+      .stats h2 { font-size: 36px; }
+      .container { border-radius: 15px; }
+      .signature-controls { flex-direction: column; }
+      .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎓 Certificate Generator</h1>
+      <p>Kingdom Seekers Fellowship</p>
+    </div>
+    
+    <div class="content">
+      <div class="stats">
+        <h2 id="totalCount">0</h2>
+        <p>Students Graduated</p>
+      </div>
+
+      <div class="filters">
+        <input type="text" class="search-box" id="searchInput" placeholder="🔍 Search by name or class..." oninput="filterStudents()">
+      </div>
+
+      <!-- Signature Setup Button -->
+      <div style="margin-bottom: 20px; padding: 16px; background: var(--bg-main); border-radius: 12px; border: 1px solid var(--border-color);">
+        <h4 style="margin-bottom: 12px; color: var(--text-main);">✍️ Pastor's Signature</h4>
+        <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">Draw or upload the signature to be used on certificates.</p>
+        <button class="btn btn-secondary" onclick="openSignatureModal()" style="width: auto; padding: 10px 20px;">
+          <i class="fas fa-pen"></i> Configure Signature
+        </button>
+        <div id="signature-status" style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
+          No signature configured yet.
+        </div>
+      </div>
+
+      <div id="status"></div>
+      <div id="studentList" class="student-list"></div>
+    </div>
+    
+    <a href="https://njorastephen1-creator.github.io/forevergreatful/" class="back-link">← Back to Main Tracker</a>
+  </div>
+
+  <!-- Signature Modal -->
+  <div id="signature-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">✍️ Configure Pastor's Signature</h3>
+        <button class="close-modal" onclick="closeSignatureModal()">&times;</button>
+      </div>
+      
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Draw Signature:</label>
+        <canvas id="signature-canvas" class="signature-pad" width="400" height="150"></canvas>
+      </div>
+      
+      <div class="signature-controls">
+        <button class="btn btn-secondary" onclick="clearSignature()" style="padding: 8px 16px; font-size: 12px;">
+          <i class="fas fa-eraser"></i> Clear
+        </button>
+        <button class="btn" onclick="saveSignature()" style="padding: 8px 16px; font-size: 12px; background: var(--success);">
+          <i class="fas fa-check"></i> Use This Signature
+        </button>
+      </div>
+      
+      <div style="margin: 16px 0; border-top: 1px solid var(--border-color); padding-top: 16px;">
+        <label style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Or Upload Image:</label>
+        <div class="file-input-wrapper">
+          <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 12px; width: auto;">
+            <i class="fas fa-upload"></i> Choose Image
+          </button>
+          <input type="file" id="signature-upload" accept="image/*" onchange="handleSignatureUpload(event)">
+        </div>
+        <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">PNG or JPG with transparent background recommended.</p>
+      </div>
+      
+      <div id="signature-preview-container" class="signature-preview" style="display: none;">
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 13px;">Preview:</p>
+        <img id="signature-preview" src="" alt="Signature preview" style="max-height: 80px;">
+      </div>
+    </div>
+  </div>
+    <script>
+    console.log('=== STANDALONE CERTIFICATE GENERATOR ===');
+    
+    // ============ Firebase Configs ============
+    const newFirebaseConfig = {
+      apiKey: "AIzaSyAz8Yv5TCai62cPGVYEZm33U8cD2kW_9hU",
+      authDomain: "certificate-81c93.firebaseapp.com",
+      projectId: "certificate-81c93",
+      storageBucket: "certificate-81c93.firebasestorage.app",
+      messagingSenderId: "515333540179",
+      appId: "1:515333540179:web:10a5e71699d54bb828b9a6"
+    };
+
+    const originalFirebaseConfig = {
+      apiKey: "AIzaSyCdSvUk6qpC857ZJfaDbniDlOKvWXPYYXY",
+      authDomain: "discipleship-dashboard-4d713.firebaseapp.com",
+      databaseURL: "https://discipleship-dashboard-4d713-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "discipleship-dashboard-4d713",
+      storageBucket: "discipleship-dashboard-4d713.firebasestorage.app",
+      messagingSenderId: "27738663604",
+      appId: "1:27738663604:web:bf1898247e0dd5a37805e1"
+    };
+
+    let graduates = [];
+    let filteredGraduates = [];
+    let capturedSignature = null;
+    let originalDb = null;
+
+    // ============ Initialize Firebase ============
+    try {
+      // Initialize NEW app (for certificate logging)
+      const newApp = firebase.initializeApp(newFirebaseConfig, 'certificate-app');
+      console.log('✅ NEW Firebase initialized:', newApp.name);
+      
+      // Initialize ORIGINAL app (for reading students)
+      const originalApp = firebase.initializeApp(originalFirebaseConfig, 'discipleship-app');
+      originalDb = originalApp.database();
+      console.log('✅ ORIGINAL Firebase initialized (READ-ONLY):', originalApp.name);
+      
+      // Load saved signature from localStorage
+      const savedSig = localStorage.getItem('pastorSignature');
+      if (savedSig) {
+        capturedSignature = savedSig;
+        updateSignatureStatus('✅ Signature configured');
+        showSignaturePreview(savedSig);
+      }
+      
+      // ✅ FIX: Wait for auth state BEFORE loading graduates
+      const originalAuth = originalApp.auth();
+      originalAuth.onAuthStateChanged(user => {
+        if (user) {
+          console.log('✅ User authenticated:', user.email);
+          loadGraduates(originalDb);
+        } else {
+          console.log('⚠️ No user logged in');
+          document.getElementById('status').innerHTML = 
+            '<div class="error">🔐 Please login to access certificates<br>' +
+            '<button class="btn btn-primary" style="margin-top:12px;" onclick="window.location.href=\'index.html\'">Go to Login</button></div>';
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Firebase initialization error:', error);
+      document.getElementById('status').innerHTML = 
+        '<div class="error">Error: ' + error.message + '</div>';
+    }
+
+    // ============ Load Graduates ============
+    function loadGraduates(db) {
+      console.log('📥 Loading graduates from original database...');
+      document.getElementById('status').innerHTML = '<div class="loading">Loading graduates...</div>';
+      
+      db.ref('students').once('value')
+        .then(snapshot => {
+          console.log('✅ Students loaded');
+          const studentsData = snapshot.val() || {};
+          
+          graduates = [];
+          
+          Object.keys(studentsData).forEach(id => {
+            const student = studentsData[id];
+            if (student.graduationDate || student.status === 'graduated') {
+              graduates.push({
+                id: id,
+                name: student.name || 'Unknown',
+                class: student.class || 'N/A',
+                phone: student.phone || 'N/A',
+                cohort: student.cohort || 'N/A',
+                graduationDate: student.graduationDate || new Date().toISOString().split('T')[0],
+                email: student.email || ''
+              });
+            }
+          });
+          
+          console.log('🎓 Graduates found:', graduates.length);
+          graduates.sort((a, b) => new Date(b.graduationDate) - new Date(a.graduationDate));
+          
+          filteredGraduates = [...graduates];
+          displayGraduates();
+          
+        })
+        .catch(error => {
+          console.error('❌ Error loading students:', error);
+          console.error('Error code:', error.code);
+          console.error('Error message:', error.message);
+          
+          let errorMsg = 'Error loading students: ' + error.message;
+          
+          if (error.code === 'permission_denied') {
+            errorMsg += '<br><br><strong>Possible causes:</strong>' +
+              '<br>1. You are not logged in to the main system' +
+              '<br>2. Firebase Rules block read access' +
+              '<br>3. Wrong Firebase project selected' +
+              '<br><br><button class="btn btn-primary" onclick="window.location.reload()">Retry</button>';
+          }
+          
+          document.getElementById('status').innerHTML = 
+            '<div class="error">' + errorMsg + '</div>';
+        });
+    }
+
+    // ============ Display Graduates ============
+    function displayGraduates() {
+      document.getElementById('totalCount').textContent = filteredGraduates.length;
+      
+      if (filteredGraduates.length === 0) {
+        const msg = graduates.length === 0 ? 
+          'No graduated students yet' : 
+          'No students match your search';
+        document.getElementById('studentList').innerHTML = 
+          '<div class="loading">' + msg + '</div>';
+        return;
+      }
+      
+      document.getElementById('status').innerHTML = 
+        '<div class="success">Showing ' + filteredGraduates.length + ' graduate(s)</div>';
+      
+      const html = filteredGraduates.map(student => {
+        const date = new Date(student.graduationDate).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'long', year: 'numeric'
+        });
+        
+        return '<div class="student-card">' +
+          '<h3>' + student.name + '</h3>' +
+          '<p><span class="badge">Class ' + student.class + '</span><span class="badge grad-badge">✓ Graduated</span></p>' +
+          '<p>📞 ' + student.phone + '</p>' +
+          '<p>📅 Graduated: ' + date + '</p>' +
+          '<p>📚 Cohort: ' + student.cohort + '</p>' +
+          '<button class="btn" onclick="generateCertificate(\'' + student.id + '\', \'' + 
+          student.name.replace(/'/g, "\\'") + '\', \'' + student.graduationDate + '\')">🎓 Generate Certificate</button>' +
+          '</div>';
+      }).join('');
+      
+      document.getElementById('studentList').innerHTML = html;
+    }
+
+    // ============ Search/Filter ============
+    function filterStudents() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      filteredGraduates = graduates.filter(student => {
+        return !search || 
+          student.name.toLowerCase().includes(search) ||
+          student.class.toLowerCase().includes(search) ||
+          student.phone.includes(search);
+      });
+      displayGraduates();
+    }
+
+    // ============ SIGNATURE CAPTURE SYSTEM ============
+    let isDrawing = false;
+    let lastX = 0, lastY = 0;
+    const canvas = document.getElementById('signature-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    function initCanvas() {
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    function getMousePos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+    
+    function startDrawing(e) {
+      isDrawing = true;
+      const pos = getMousePos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+    
+    function draw(e) {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const pos = getMousePos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+    
+    function stopDrawing() { isDrawing = false; }
+
+    // Mouse events
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    
+    // Touch events
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const mouseEvent = new MouseEvent('mousedown', { clientX: touch.clientX, clientY: touch.clientY });
+      canvas.dispatchEvent(mouseEvent);
+    });
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const mouseEvent = new MouseEvent('mousemove', { clientX: touch.clientX, clientY: touch.clientY });
+      canvas.dispatchEvent(mouseEvent);
+    });
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      const mouseEvent = new MouseEvent('mouseup', {});
+      canvas.dispatchEvent(mouseEvent);
+    });
+
+    // Modal functions
+    function openSignatureModal() {
+      document.getElementById('signature-modal').classList.add('active');
+      initCanvas();
+    }
+    function closeSignatureModal() {
+      document.getElementById('signature-modal').classList.remove('active');
+    }
+    function clearSignature() { initCanvas(); }
+    
+    function saveSignature() {
+      capturedSignature = canvas.toDataURL('image/png');
+      localStorage.setItem('pastorSignature', capturedSignature);
+      updateSignatureStatus('✅ Signature saved');
+      showSignaturePreview(capturedSignature);
+      closeSignatureModal();
+    }
+    
+    function handleSignatureUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        capturedSignature = e.target.result;
+        localStorage.setItem('pastorSignature', capturedSignature);
+        updateSignatureStatus('✅ Signature uploaded');
+        showSignaturePreview(capturedSignature);
+        closeSignatureModal();
+      };
+      reader.readAsDataURL(file);
+      event.target.value = '';
+    }
+    
+    function updateSignatureStatus(message) {
+      document.getElementById('signature-status').innerHTML = 
+        `<span style="color: var(--success);">${message}</span>`;
+    }
+    
+    function showSignaturePreview(dataUrl) {
+      const preview = document.getElementById('signature-preview');
+      const container = document.getElementById('signature-preview-container');
+      preview.src = dataUrl;
+      container.style.display = 'block';
+    }
+
+    // ============ CERTIFICATE GENERATION ============
+    function generateCertificate(studentId, studentName, gradDate) {
+      console.log('Generating certificate for:', studentName);
+      
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'cm', format: [21, 29.7] });
+        const pageWidth = 21;
+        const pageHeight = 29.7;
+        
+        // White background
+        doc.setFillColor(255, 255, 255);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        
+        // Decorative corners
+        doc.setFillColor(59, 130, 246);
+        doc.triangle(pageWidth - 5, 0, pageWidth, 0, pageWidth, 6, 'F');
+        doc.setFillColor(245, 158, 11);
+        doc.triangle(pageWidth - 4, 0, pageWidth, 0, pageWidth, 5, 'F');
+        doc.setFillColor(59, 130, 246);
+        doc.triangle(0, pageHeight, 5, pageHeight, 0, pageHeight - 6, 'F');
+        doc.setFillColor(245, 158, 11);
+        doc.triangle(0, pageHeight, 4, pageHeight, 0, pageHeight - 5, 'F');
+        
+        // Orange border
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.3);
+        doc.rect(1.2, 1.2, pageWidth - 2.4, pageHeight - 2.4);
+        
+        // Logo
+        const logoUrl = 'https://njorastephen1-creator.github.io/important-2/download.jfif';
+        try {
+          doc.addImage(logoUrl, 'JPEG', pageWidth/2 - 1.75, 1.5, 3.5, 3.5);
+        } catch (e) {
+          doc.setFillColor(239, 68, 68);
+          doc.circle(pageWidth/2, 3.25, 1.5, 'F');
+        }
+        
+        // Organization name
+        doc.setFontSize(22);
+        doc.setTextColor(30, 58, 138);
+        doc.setFont('helvetica', 'bold');
+        doc.text('KINGDOM SEEKERS FELLOWSHIP', pageWidth / 2, 6, { align: 'center' });
+        
+        // Address
+        doc.setFontSize(10);
+        doc.setTextColor(30, 58, 138);
+        doc.setFont('helvetica', 'normal');
+        doc.text('1139-00600', pageWidth / 2, 6.7, { align: 'center' });
+        doc.text('NGARA NAIROBI', pageWidth / 2, 7.3, { align: 'center' });
+        
+        // Certificate title
+        doc.setFontSize(30);
+        doc.setTextColor(59, 130, 246);
+        doc.setFont('times', 'bolditalic');
+        doc.text('Discipleship Certificate', pageWidth / 2, 9.3, { align: 'center' });
+        
+        // Awarded to
+        doc.setFontSize(13);
+        doc.setTextColor(62, 39, 35);
+        doc.setFont('times', 'italic');
+        doc.text('Awarded To', pageWidth / 2, 10.7, { align: 'center' });
+        
+        // Student name
+        doc.setFontSize(20);
+        doc.setTextColor(30, 58, 138);
+        doc.setFont('times', 'bold');
+        doc.text(studentName.toUpperCase(), pageWidth / 2, 12, { align: 'center' });
+        
+        // Dotted line
+        doc.setDrawColor(30, 58, 138);
+        doc.setLineWidth(0.1);
+        doc.setLineDashPattern([0.3, 0.3]);
+        doc.line(2.5, 12.4, pageWidth - 2.5, 12.4);
+        doc.setLineDashPattern([]);
+        
+        // Course description
+        doc.setFontSize(9);
+        doc.setTextColor(31, 41, 55);
+        doc.setFont('times', 'normal');
+        doc.text('Upon successful completion of the Discipleship Course which entails:-', pageWidth / 2, 13.4, { align: 'center' });
+        
+        // Lessons
+        const lessons = [
+          "1. SALVATION", "2. TEMPTATIONS", "3. PRAYERS", "4. THE BIBLE", "5. FELLOWSHIP",
+          "6. BEARING FRUITS/WITNESSING", "7. BAPTISM", "8. HOLY SPIRIT", "9. KINGDOM SERVICE", "10. DELIVERANCE"
+        ];
+        doc.setFontSize(9);
+        doc.setTextColor(62, 39, 35);
+        doc.setFont('helvetica', 'bold');
+        const leftColumnX = 4.5, rightColumnX = 12, startY = 14.5, lineHeight = 1.1;
+        for (let i = 0; i < 5; i++) doc.text(lessons[i], leftColumnX, startY + (i * lineHeight));
+        for (let i = 5; i < 10; i++) doc.text(lessons[i], rightColumnX, startY + ((i - 5) * lineHeight));
+        
+        // Date
+        const dateObj = new Date(gradDate);
+        const day = dateObj.getDate();
+        const month = dateObj.toLocaleString('en-GB', { month: 'long' });
+        const year = dateObj.getFullYear();
+        const getOrdinal = (n) => {
+          const s = ["th", "st", "nd", "rd"];
+          const v = n % 100;
+          return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        };
+        doc.setFontSize(9);
+        doc.setTextColor(31, 41, 55);
+        doc.setFont('times', 'italic');
+        doc.text('on this ' + getOrdinal(day) + ' Day of ' + month + ', ' + year + '.', pageWidth / 2, 19.5, { align: 'center' });
+        
+        // Signature
+        const sigX = 13, sigY = 20.5, sigW = 5, sigH = 2;
+        if (capturedSignature) {
+          doc.addImage(capturedSignature, 'PNG', sigX, sigY, sigW, sigH);
+        } else {
+          doc.setDrawColor(30, 58, 138);
+          doc.setLineWidth(0.5);
+          doc.line(sigX, sigY + 1, sigX + sigW, sigY + 1);
+          doc.setFontSize(8.5);
+          doc.setTextColor(31, 41, 55);
+          doc.setFont('helvetica', 'bold');
+          doc.text('ESSOLLOM KARANJA.', sigX + sigW/2, sigY + 1.5, { align: 'center' });
+        }
+        doc.setFontSize(8.5);
+        doc.setTextColor(31, 41, 55);
+        doc.setFont('helvetica', 'bold');
+        doc.text('ESSOLLOM KARANJA.', sigX + sigW/2, sigY + sigH + 0.5, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text('Senior Pastor', sigX + sigW/2, sigY + sigH + 0.9, { align: 'center' });
+        
+        // Motto
+        doc.setFontSize(11);
+        doc.setTextColor(62, 39, 35);
+        doc.setFont('times', 'italic');
+        doc.text('Seek Ye First The Kingdom Of God', pageWidth / 2, 24.5, { align: 'center' });
+        
+        // Save and download
+        const fileName = 'Certificate_' + studentName.replace(/\s+/g, '_') + '_' + gradDate.replace(/-/g, '') + '.pdf';
+        doc.save(fileName);
+        
+        // Log to Firebase (NEW project)
+        try {
+          const newDb = firebase.app('certificate-app').database();
+          newDb.ref('generated_certificates/' + studentId).push({
+            studentName: studentName,
+            generatedAt: new Date().toISOString(),
+            graduationDate: gradDate,
+            fileName: fileName,
+            hasCustomSignature: !!capturedSignature
+          });
+        } catch (logError) {
+          console.log('Log error (non-critical):', logError.message);
+        }
+        
+        // Show success
+        const statusDiv = document.getElementById('status');
+        statusDiv.innerHTML = '<div class="success">✅ Certificate downloaded: ' + fileName + '</div>';
+        setTimeout(() => { if (statusDiv.querySelector('.success')) displayGraduates(); }, 5000);
+        
+      } catch (error) {
+        console.error('❌ Certificate generation error:', error);
+        alert('Error generating certificate: ' + error.message);
+      }
+    }
+
+    // Initialize canvas on load
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log('✅ Certificate Generator - Signature Capture Ready');
+      initCanvas();
+    });
+  </script>
+</body>
+</html>
